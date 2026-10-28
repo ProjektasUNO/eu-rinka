@@ -1,0 +1,49 @@
+name: Rinkimas
+
+# Tik parsiunčia, ką nurodo serveris (fetcher/fetch.py, leidžia tik *.vinted.*).
+# Vienas paleidimas = viena SSH sesija (~10 min.), be ciklo – kas paleidimas naujas runner'is.
+on:
+  schedule:
+    - cron: "13,43 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: eu-rinka
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: fetcher
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Įdiegti
+        run: pip install -q "curl_cffi>=0.16,<0.17"
+
+      - name: Ryšys
+        env:
+          KEY: ${{ secrets.SERVER_SSH_KEY }}
+          KNOWN: ${{ secrets.SERVER_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/server && chmod 600 ~/.ssh/server
+          printf '%s\n' "$KNOWN" > ~/.ssh/known_hosts
+
+      - name: Rinkti
+        env:
+          HOST: ${{ secrets.SERVER_HOST }}
+        run: |
+          out=$(python fetcher/fetch.py ssh -T -i ~/.ssh/server -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            -o LogLevel=ERROR -o ServerAliveInterval=30 "deal@$HOST" 2>/dev/null) || rc=$?
+          echo "$out" | grep -oE '^gauta [0-9]+' || echo "gauta 0"
+          exit ${rc:-0}
