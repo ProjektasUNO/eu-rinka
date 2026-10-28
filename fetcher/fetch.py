@@ -22,6 +22,14 @@ def new_session():
     return requests.Session(impersonate="chrome")
 
 
+def cookies(session):
+    """Slapukų kopija serveriui. Tas pats vardas keliuose domenuose (__cf_bm) – ne klaida."""
+    jar = getattr(session.cookies, "jar", None)
+    if jar is not None:
+        return {c.name: c.value for c in jar}
+    return dict(session.cookies)
+
+
 def fetch(session, msg):
     url = msg.get("url") or ""
     parts = urlsplit(url)
@@ -32,7 +40,7 @@ def fetch(session, msg):
                         timeout=min(float(msg.get("timeout") or 20), 60))
         return {"id": msg.get("id"), "status": r.status_code, "url": str(r.url),
                 "headers": {k: v for k, v in r.headers.items()},
-                "cookies": {k: v for k, v in session.cookies.items()},
+                "cookies": cookies(session),
                 "text": (r.text or "")[:MAX_TEXT]}
     except Exception as e:
         return {"id": msg.get("id"), "error": f"{type(e).__name__}: {str(e)[:200]}"}
@@ -45,16 +53,17 @@ def serve(inp, out, session_factory=new_session, run_id=""):
         out.flush()
 
     send({"hello": 1, "run": run_id})
-    session, got, errors = None, 0, 0
+    sessions, got, errors = {}, 0, 0              # sid -> sesija (ES: kiekvienai šaliai sava)
     for line in inp:
         msg = json.loads(line)
         op = msg.get("op")
         if op == "session":
-            session = session_factory()
+            sessions[msg.get("sid")] = session_factory()
         elif op == "get":
-            if session is None:
-                session = session_factory()
-            reply = fetch(session, msg)
+            sid = msg.get("sid")
+            if sid not in sessions:
+                sessions[sid] = session_factory()
+            reply = fetch(sessions[sid], msg)
             got += 1
             errors += 1 if "error" in reply else 0
             send(reply)
