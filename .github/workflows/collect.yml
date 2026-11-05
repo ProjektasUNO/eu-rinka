@@ -2,11 +2,19 @@ name: Rinkimas
 
 # Tik parsiunčia, ką nurodo serveris (fetcher/fetch.py, leidžia tik *.vinted.*).
 # Vienas paleidimas = viena SSH sesija (~10 min.), be ciklo – kas paleidimas naujas runner'is.
-# Kas 10 min.; ką rinkti (ar nieko) ir ribas sprendžia serveris – dažniausiai paleidimas užklausų nedaro.
+# Kas valandą ~54 min. darbas, serveris kviečiamas kas 5 min. (GitHub dažnų cron'ų nevykdo – 11-05 iš
+# „kas 10 min.“ per 40 min. įvyko 1). Ką rinkti (ar nieko) ir ribas sprendžia serveris (vinted/eu_pace.py).
 on:
   schedule:
-    - cron: "3-59/10 * * * *"
+    - cron: "13 * * * *"
   workflow_dispatch:
+    inputs:
+      minutes:
+        description: "Kiek minučių kartoti"
+        default: "54"
+      every:
+        description: "Kas kiek sekundžių"
+        default: "300"
 
 concurrency:
   group: eu-rinka
@@ -18,7 +26,7 @@ permissions:
 jobs:
   collect:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 70
     steps:
       - uses: actions/checkout@v5
         with:
@@ -43,8 +51,16 @@ jobs:
       - name: Rinkti
         env:
           HOST: ${{ secrets.SERVER_HOST }}
+          MINUTES: ${{ inputs.minutes || '54' }}
+          EVERY: ${{ inputs.every || '300' }}
         run: |
-          out=$(python fetcher/fetch.py ssh -T -i ~/.ssh/server -o BatchMode=yes -o StrictHostKeyChecking=yes \
-            -o LogLevel=ERROR -o ServerAliveInterval=30 "deal@$HOST" 2>/dev/null) || rc=$?
-          echo "$out" | grep -oE '^gauta [0-9]+' || echo "gauta 0"
-          exit ${rc:-0}
+          end=$(( $(date +%s) + MINUTES * 60 ))
+          while :; do
+            began=$(date +%s)
+            out=$(python fetcher/fetch.py ssh -T -i ~/.ssh/server -o BatchMode=yes -o StrictHostKeyChecking=yes \
+              -o LogLevel=ERROR -o ServerAliveInterval=30 "deal@$HOST" 2>/dev/null) || true
+            echo "$(date -u '+%H:%M UTC'): $(echo "$out" | grep -oE '^gauta [0-9]+' || echo 'gauta 0')"
+            next=$(( began + EVERY ))
+            [ "$next" -ge "$end" ] && break
+            now=$(date +%s); [ "$next" -gt "$now" ] && sleep $(( next - now ))
+          done
