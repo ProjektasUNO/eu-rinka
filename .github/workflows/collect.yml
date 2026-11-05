@@ -2,10 +2,10 @@ name: Rinkimas
 
 # Tik parsiunčia, ką nurodo serveris (fetcher/fetch.py, leidžia tik *.vinted.*).
 # Vienas paleidimas = viena SSH sesija (~10 min.), be ciklo – kas paleidimas naujas runner'is.
-# Kas 2 val. (:13); ribos – serveryje (≤120 užklausų paleidimui, šaliai ≤25, PL ≤20).
+# Kas 10 min.; ką rinkti (ar nieko) ir ribas sprendžia serveris – dažniausiai paleidimas užklausų nedaro.
 on:
   schedule:
-    - cron: "13 */2 * * *"
+    - cron: "3-59/10 * * * *"
   workflow_dispatch:
 
 concurrency:
